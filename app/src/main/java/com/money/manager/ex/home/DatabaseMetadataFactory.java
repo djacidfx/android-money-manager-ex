@@ -18,14 +18,6 @@ package com.money.manager.ex.home;
 
 import android.content.Context;
 
-import com.money.manager.ex.MmexApplication;
-import com.money.manager.ex.R;
-import com.money.manager.ex.core.database.DatabaseManager;
-import com.money.manager.ex.settings.AppSettings;
-import com.money.manager.ex.settings.SyncPreferences;
-import com.money.manager.ex.sync.SyncManager;
-import com.money.manager.ex.utils.MmxDate;
-
 import androidx.annotation.NonNull;
 
 /**
@@ -60,26 +52,5 @@ public class DatabaseMetadataFactory {
 
     public Context getContext() {
         return this.context;
-    }
-
-    /**
-     * Creates a database entry from the current preferences. Used for transition from preferences
-     * to Database metadata records.
-     * @return A database record that represents the current preferences (local/remote db paths).
-     */
-    public DatabaseMetadata createDefaultEntry() {
-        DatabaseMetadata entry = new DatabaseMetadata();
-
-        // todo remove the local change preference after upgrade.
-        entry.localPath = new DatabaseManager(getContext()).getDatabasePath();
-        entry.isLocalFileChanged = new AppSettings(getContext()).get(R.string.pref_is_local_file_changed, false);
-
-        SyncManager syncManager = new SyncManager(getContext());
-        // todo remove the remote file preference after upgrade
-        entry.remotePath = new SyncPreferences(getContext()).loadPreference(R.string.pref_remote_file, "");
-        MmxDate cachedRemoteChangeDate = syncManager.getRemoteLastModifiedDatePreferenceFor(entry.remotePath);
-        entry.setRemoteLastChangedDate(cachedRemoteChangeDate);
-
-        return entry;
     }
 }

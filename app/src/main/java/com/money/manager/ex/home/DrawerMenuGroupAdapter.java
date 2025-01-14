@@ -17,18 +17,17 @@
 package com.money.manager.ex.home;
 
 import android.content.Context;
-import android.os.Build;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.BaseExpandableListAdapter;
 
+import androidx.appcompat.app.AppCompatActivity;
+
 import com.money.manager.ex.R;
 import com.shamanland.fonticon.FontIconView;
 
 import java.util.ArrayList;
-
-import androidx.appcompat.app.AppCompatActivity;
 
 /**
  * Adapter for the expandable drawer menu. Used to avoid displaying the dialogs when selecting the
@@ -60,7 +59,7 @@ public class DrawerMenuGroupAdapter
     }
 
     @Override
-    public View getChildView(int groupPosition, final int childPosition,
+    public View getChildView(int groupPosition, int childPosition,
                              boolean isLastChild, View convertView, ViewGroup parent) {
         DrawerMenuItem item = (DrawerMenuItem) getChild(groupPosition, childPosition);
 
@@ -84,11 +83,7 @@ public class DrawerMenuGroupAdapter
                 holder.imageViewIcon.setBackgroundResource(item.getIcon());
             }
             if (item.getIconDrawable() != null) {
-                if (android.os.Build.VERSION.SDK_INT > Build.VERSION_CODES.ICE_CREAM_SANDWICH_MR1) {
-                    holder.imageViewIcon.setBackground(item.getIconDrawable());
-                } else {
-                    holder.imageViewIcon.setBackgroundDrawable(item.getIconDrawable());
-                }
+                holder.imageViewIcon.setBackground(item.getIconDrawable());
             }
         }
 
@@ -151,11 +146,7 @@ public class DrawerMenuGroupAdapter
                 holder.imageViewIcon.setBackgroundResource(item.getIcon());
             }
             if (item.getIconDrawable() != null) {
-                if (Build.VERSION.SDK_INT > Build.VERSION_CODES.ICE_CREAM_SANDWICH_MR1) {
-                    holder.imageViewIcon.setBackground(item.getIconDrawable());
-                } else {
-                    holder.imageViewIcon.setBackgroundDrawable(item.getIconDrawable());
-                }
+                holder.imageViewIcon.setBackground(item.getIconDrawable());
             }
         }
 

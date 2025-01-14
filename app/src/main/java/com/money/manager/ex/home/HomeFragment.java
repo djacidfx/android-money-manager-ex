@@ -32,14 +32,18 @@ import android.view.ViewGroup;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.Button;
 import android.widget.ExpandableListView;
-import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
-import android.widget.Toast;
 
-import com.google.common.io.Files;
+import androidx.annotation.Nullable;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.fragment.app.Fragment;
+import androidx.fragment.app.FragmentActivity;
+import androidx.loader.app.LoaderManager;
+import androidx.loader.content.Loader;
+
 import com.melnykov.fab.FloatingActionButton;
 import com.money.manager.ex.Constants;
 import com.money.manager.ex.MmexApplication;
@@ -55,7 +59,6 @@ import com.money.manager.ex.core.InfoKeys;
 import com.money.manager.ex.core.TransactionTypes;
 import com.money.manager.ex.core.database.DatabaseManager;
 import com.money.manager.ex.currency.CurrencyService;
-import com.money.manager.ex.database.DatabaseMigrator14To20;
 import com.money.manager.ex.database.QueryAccountBills;
 import com.money.manager.ex.database.QueryReportIncomeVsExpenses;
 import com.money.manager.ex.datalayer.AccountRepository;
@@ -77,29 +80,22 @@ import com.money.manager.ex.transactions.CheckingTransactionEditActivity;
 import com.money.manager.ex.transactions.EditTransactionActivityConstants;
 import com.money.manager.ex.transactions.IntentDataParameters;
 import com.money.manager.ex.utils.MmxDatabaseUtils;
-import com.money.manager.ex.view.RobotoTextView;
 import com.money.manager.ex.viewmodels.IncomeVsExpenseReportEntity;
 
 import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
 
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.Callable;
 
 import javax.inject.Inject;
 
-import androidx.annotation.Nullable;
-import androidx.appcompat.app.AppCompatActivity;
-import androidx.fragment.app.Fragment;
-import androidx.fragment.app.FragmentActivity;
-import androidx.loader.app.LoaderManager;
-import androidx.loader.content.Loader;
 import dagger.Lazy;
-import icepick.Icepick;
-import icepick.State;
 import info.javaperformance.money.Money;
 import info.javaperformance.money.MoneyFactory;
 import rx.Single;
@@ -115,7 +111,7 @@ public class HomeFragment
     extends Fragment
     implements LoaderManager.LoaderCallbacks<Cursor> {
 
-//    private static final int LOADER_USER_NAME = 1;
+//    private static final long LOADER_USER_NAME = 1;
     private static final int LOADER_ACCOUNT_BILLS = 2;
     private static final int LOADER_INCOME_EXPENSES = 4;
 
@@ -144,7 +140,7 @@ public class HomeFragment
     private Money mGrandTotal = MoneyFactory.fromDouble(0);
     private Money mGrandReconciled = MoneyFactory.fromDouble(0);
 
-    @State int accountBalancedId = Constants.NOT_SET;
+    long accountBalancedId = Constants.NOT_SET;
     private QueryAccountBills accountBeingBalanced = null;
 
     @Override
@@ -162,8 +158,7 @@ public class HomeFragment
 
         // restore number input binaryDialog reference, if any
         if (savedInstanceState != null) {
-//            this.accountBalancedId = savedInstanceState.getInt(TAG_BALANCE_ACCOUNT);
-            Icepick.restoreInstanceState(this, savedInstanceState);
+            this.accountBalancedId = savedInstanceState.getLong(TAG_BALANCE_ACCOUNT);
         }
     }
 
@@ -329,20 +324,16 @@ public class HomeFragment
                     barIncome.setMax((int) (Math.abs(income) + Math.abs(expenses)));
                     barExpenses.setMax((int) (Math.abs(income) + Math.abs(expenses)));
 
-                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.HONEYCOMB) {
-                        ObjectAnimator animationIncome = ObjectAnimator.ofInt(barIncome, "progress", (int) Math.abs(income));
-                        animationIncome.setDuration(1000); // 0.5 second
-                        animationIncome.setInterpolator(new DecelerateInterpolator());
-                        animationIncome.start();
+                    long longDuration = getResources().getInteger(android.R.integer.config_longAnimTime);
+                    ObjectAnimator animationIncome = ObjectAnimator.ofInt(barIncome, "progress", (int) Math.abs(income));
+                    animationIncome.setDuration(longDuration);
+                    animationIncome.setInterpolator(new DecelerateInterpolator());
+                    animationIncome.start();
 
-                        ObjectAnimator animationExpenses = ObjectAnimator.ofInt(barExpenses, "progress", (int) Math.abs(expenses));
-                        animationExpenses.setDuration(1000); // 0.5 second
-                        animationExpenses.setInterpolator(new DecelerateInterpolator());
-                        animationExpenses.start();
-                    } else {
-                        barIncome.setProgress((int) Math.abs(income));
-                        barExpenses.setProgress((int) Math.abs(expenses));
-                    }
+                    ObjectAnimator animationExpenses = ObjectAnimator.ofInt(barExpenses, "progress", (int) Math.abs(expenses));
+                    animationExpenses.setDuration(longDuration);
+                    animationExpenses.setInterpolator(new DecelerateInterpolator());
+                    animationExpenses.start();
                 }
                 break;
         }
@@ -389,13 +380,14 @@ public class HomeFragment
             AppCompatActivity activity = (AppCompatActivity) getActivity();
 
             // show title
-            activity.getSupportActionBar().setDisplayShowTitleEnabled(true);
+            Objects.requireNonNull(activity.getSupportActionBar()).setDisplayShowTitleEnabled(true);
 
-            // Show db name in toolbar.
             String dbPath = new AppSettings(activity).getDatabaseSettings().getDatabasePath();
-            //String dbFileName = FilenameUtils.getBaseName(dbPath);
-            String dbFileName = Files.getNameWithoutExtension(dbPath);
-            activity.getSupportActionBar().setSubtitle(dbFileName);
+            if (dbPath != null && !dbPath.isEmpty()) {
+                activity.getSupportActionBar().setSubtitle(Paths.get(dbPath).getFileName().toString());
+            } else {
+                activity.getSupportActionBar().setSubtitle(R.string.path_database_not_exists);
+            }
         }
 
         // reload data.
@@ -456,7 +448,7 @@ public class HomeFragment
         QueryAccountBills account = getSelectedAccount(item);
         if (account == null) return false;
 
-        int accountId = account.getAccountId();
+        long accountId = account.getAccountId();
 
         // get the action
         String menuItemTitle = item.getTitle().toString();
@@ -483,8 +475,7 @@ public class HomeFragment
 
     @Override
     public void onSaveInstanceState(Bundle outState) {
-//        outState.putInt(TAG_BALANCE_ACCOUNT, this.accountBalancedId);
-        Icepick.saveInstanceState(this, outState);
+        outState.putLong(TAG_BALANCE_ACCOUNT, this.accountBalancedId);
     }
 
     // Events
@@ -542,7 +533,7 @@ public class HomeFragment
         setAccountBeingBalanced(account);
 
         // get the amount via input binaryDialog.
-        int currencyId = account.getCurrencyId();
+        long currencyId = account.getCurrencyId();
 
         AmountInputDialog dialog = AmountInputDialog.getInstance(REQUEST_BALANCE_ACCOUNT,
                 MoneyFactory.fromString("0"), currencyId, true);
@@ -623,9 +614,6 @@ public class HomeFragment
                 }
             });
         }
-
-        // Database migration v1.4 -> v2.0 location.
-        setUpMigrationButton(view);
     }
 
     private QueryAccountBills getAccountBeingBalanced() {
@@ -696,7 +684,7 @@ public class HomeFragment
                         .get(childPosition);
                 if (selectedAccount == null) return false;
 
-                int accountId = selectedAccount.getAccountId();
+                long accountId = selectedAccount.getAccountId();
                 String accountType = mAccountTypes.get(groupPosition);
 
                 Object event;
@@ -761,50 +749,6 @@ public class HomeFragment
             if(expanded) {
                 mExpandableListView.expandGroup(i);
             }
-        }
-    }
-
-    private void setUpMigrationButton(View view) {
-        // check if there is a database at the old location.
-        final DatabaseMigrator14To20 migrator = new DatabaseMigrator14To20(getActivity());
-        boolean legacyDataExists = migrator.legacyDataExists();
-
-        // hide option if there is no old database.
-        if (!legacyDataExists) return;
-
-        // otherwise show the options
-        LinearLayout panel = view.findViewById(R.id.panelMigration);
-        panel.setVisibility(View.VISIBLE);
-
-        // e events, etc.
-
-        Button migrateDatabaseButton = view.findViewById(R.id.buttonMigrateDatabase);
-        if (migrateDatabaseButton != null) {
-            if (!migrator.legacyDataExists()) {
-
-                // add handler
-                OnClickListener migrateClickListener = new OnClickListener() {
-                    @Override
-                    public void onClick(View view) {
-                        boolean migrationSuccess = migrator.migrateLegacyDatabase();
-                        if (migrationSuccess) {
-                            Toast.makeText(getActivity(), R.string.database_migrate_14_to_20_success,
-                                    Toast.LENGTH_LONG).show();
-                        } else {
-                            Toast.makeText(getActivity(), R.string.database_migrate_14_to_20_failure,
-                                    Toast.LENGTH_LONG).show();
-                        }
-                    }
-                };
-                migrateDatabaseButton.setOnClickListener(migrateClickListener);
-            } else {
-                // hide migration notification.
-                RobotoTextView textMigrate = view.findViewById(R.id.textMigrateDatabase);
-                textMigrate.setVisibility(View.GONE);
-
-                migrateDatabaseButton.setVisibility(View.GONE);
-            }
-
         }
     }
 

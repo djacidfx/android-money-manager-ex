@@ -53,7 +53,7 @@ public class CurrencyListActivity
         if (intent != null && !(TextUtils.isEmpty(intent.getAction()))) {
             // restore previous device orientation if it was modified.
             if(fragment.mPreviousOrientation != Constants.NOT_SET) {
-                int currentOrientation = ActivityUtils.forceCurrentOrientation(this);
+                long currentOrientation = ActivityUtils.forceCurrentOrientation(this);
                 if(currentOrientation != fragment.mPreviousOrientation) {
                     ActivityUtils.restoreOrientation(this, fragment.mPreviousOrientation);
                 }
@@ -64,8 +64,6 @@ public class CurrencyListActivity
         if (fm.findFragmentById(R.id.content) == null) {
             fm.beginTransaction().add(R.id.content, fragment, FRAGMENTTAG).commit();
         }
-
-//        Answers.getInstance().logCustom(new CustomEvent(AnswersEvents.CurrencyList.name()));
     }
 
     @Override

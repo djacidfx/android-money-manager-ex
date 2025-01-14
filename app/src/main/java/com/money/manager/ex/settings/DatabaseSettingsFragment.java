@@ -16,35 +16,32 @@
  */
 package com.money.manager.ex.settings;
 
-import android.database.sqlite.SQLiteDatabase;
+import static android.app.Activity.RESULT_OK;
+
+import android.content.Intent;
+import android.net.Uri;
 import android.os.Bundle;
-import android.text.Html;
-import android.text.InputType;
-import android.text.TextUtils;
 import android.util.Log;
 import android.widget.Toast;
 
 import androidx.preference.Preference;
 import androidx.preference.PreferenceFragmentCompat;
-import androidx.preference.PreferenceScreen;
+import androidx.sqlite.db.SupportSQLiteDatabase;
 
-import com.afollestad.materialdialogs.MaterialDialog;
 import com.money.manager.ex.BuildConfig;
 import com.money.manager.ex.MmexApplication;
 import com.money.manager.ex.R;
-import com.money.manager.ex.core.Core;
+import com.money.manager.ex.core.RequestCodes;
 import com.money.manager.ex.core.UIHelper;
-import com.money.manager.ex.core.database.DatabaseManager;
-import com.money.manager.ex.database.DatabaseMigrator14To20;
 import com.money.manager.ex.database.MmxOpenHelper;
 import com.money.manager.ex.home.DatabaseMetadata;
-import com.money.manager.ex.home.DatabaseMetadataFactory;
-import com.money.manager.ex.home.MainActivity;
 import com.money.manager.ex.home.RecentDatabasesProvider;
-import com.money.manager.ex.utils.DonateDialogUtils;
 import com.money.manager.ex.utils.MmxDatabaseUtils;
 
-import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 
 import javax.inject.Inject;
 
@@ -91,9 +88,6 @@ public class DatabaseSettingsFragment
         // Check integrity
         initDatabaseIntegrityOption();
 
-        // Migration of databases from version 1.4 to the location in 2.0.
-        setVisibilityOfMigrationButton();
-
         // Fix duplicates
         initFixDuplicates();
     }
@@ -109,81 +103,46 @@ public class DatabaseSettingsFragment
         Preference preference = findPreference(getString(R.string.pref_clear_recent_files));
         if (preference == null) return;
 
-        final RecentDatabasesProvider recents = mDatabases.get();
+        final RecentDatabasesProvider recent = mDatabases.get();
 
 
         // show how many items are in the list.
-        preference.setSummary(Integer.toString(recents.map.size()));
+        preference.setSummary(Integer.toString(recent.map.size()));
 
-        preference.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
-            @Override
-            public boolean onPreferenceClick(Preference preference) {
-                // clear recent files list
-                boolean success = recents.clear();
-                // update display value.
-                showNumberOfRecentFiles();
+        preference.setOnPreferenceClickListener(preference1 -> {
+            // clear recent files list
+            boolean success = recent.clear();
+            // update display value.
+            showNumberOfRecentFiles();
 
-                // notification
-                String message = success
-                    ? getString(R.string.cleared)
-                    : getString(R.string.error);
-                new UIHelper(getActivity()).showToast(message);
-                return false;
-            }
+            // notification
+            String message = success
+                ? getString(R.string.cleared)
+                : getString(R.string.error);
+            new UIHelper(getActivity()).showToast(message);
+            return false;
         });
     }
 
     private void refreshDbVersion() {
-        final Preference preference = findPreference(getActivity().getString(R.string.pref_database_version));
+        final Preference preference = findPreference(requireActivity().getString(R.string.pref_database_version));
 
         String version = "N/A";
-
-        SQLiteDatabase db = openHelper.get().getReadableDatabase();
+        SupportSQLiteDatabase db = null;
+        try {
+            db = openHelper.get().getReadableDatabase();
+        } catch (Exception e) {
+            Timber.e(e);
+        }
         if (db != null) {
             int versionNumber = db.getVersion();
             version = Integer.toString(versionNumber);
         }
 
+        assert preference != null;
         preference.setSummary(version);
     }
 
-    private void setVisibilityOfMigrationButton() {
-        Preference migratePreference = findPreference(getString(R.string.pref_database_migrate_14_to_20));
-        if (migratePreference == null) return;
-
-        // check if there is a database at the old location.
-        final DatabaseMigrator14To20 migrator = new DatabaseMigrator14To20(getActivity());
-        boolean legacyDataExists = migrator.legacyDataExists();
-
-        // display description.
-        migratePreference.setSummary(getString(R.string.database_migrate_14_to_20_explanation));
-        // + " (" + migrator.getLegacyDbPath() + ")");
-
-        Preference.OnPreferenceClickListener migrateClicked = new Preference.OnPreferenceClickListener() {
-            @Override
-            public boolean onPreferenceClick(Preference preference) {
-                boolean success = migrator.migrateLegacyDatabase();
-                if (success) {
-                    Toast.makeText(getActivity(), R.string.database_migrate_14_to_20_success, Toast.LENGTH_LONG).show();
-                } else {
-                    Toast.makeText(getActivity(), R.string.database_migrate_14_to_20_failure, Toast.LENGTH_LONG).show();
-                }
-                // The return value indicates whether to persist the preference,
-                // which is not used in this case.
-                return false;
-            }
-        };
-
-        // hide preference if there is no legacy data.
-        if (!legacyDataExists) {
-            PreferenceScreen screen = getPreferenceScreen();
-            screen.removePreference(migratePreference);
-        } else {
-            // enable listener for migration.
-            migratePreference.setOnPreferenceClickListener(migrateClicked);
-        }
-
-    }
     private void refreshDbPath() {
 
         DatabaseMetadata db = mDatabases.get().getCurrent();
@@ -200,24 +159,19 @@ public class DatabaseSettingsFragment
 
         preference.setSummary(getString(R.string.db_check_schema_summary));
 
-        Preference.OnPreferenceClickListener clickListener = new Preference.OnPreferenceClickListener() {
-            @Override
-            public boolean onPreferenceClick(Preference preference) {
-                MmxDatabaseUtils db = new MmxDatabaseUtils(getActivity());
+        preference.setOnPreferenceClickListener(preference1 -> {
+            MmxDatabaseUtils db = new MmxDatabaseUtils(getActivity());
 
-                Timber.d("checking db schema");
+            Timber.d("checking db schema");
 
-                boolean result = db.checkSchema();
-                if (result) {
-                    showToast(R.string.db_check_schema_success, Toast.LENGTH_SHORT);
-                } else {
-                    showToast(R.string.db_check_schema_error, Toast.LENGTH_SHORT);
-                }
-                return false;
+            boolean result = db.checkSchema();
+            if (result) {
+                showToast(R.string.db_check_schema_success, Toast.LENGTH_SHORT);
+            } else {
+                showToast(R.string.db_check_schema_error, Toast.LENGTH_SHORT);
             }
-        };
-
-        preference.setOnPreferenceClickListener(clickListener);
+            return false;
+        });
     }
 
     private void initDatabaseIntegrityOption() {
@@ -226,62 +180,79 @@ public class DatabaseSettingsFragment
 
         preference.setSummary(getString(R.string.db_check_integrity_summary));
 
-        Preference.OnPreferenceClickListener clickListener = new Preference.OnPreferenceClickListener() {
-            @Override
-            public boolean onPreferenceClick(Preference preference) {
-                MmxDatabaseUtils db = new MmxDatabaseUtils(getActivity());
-                boolean result;
-                try {
-                    Timber.d("checking db integrity.");
+        preference.setOnPreferenceClickListener(preference1 -> {
+            MmxDatabaseUtils db = new MmxDatabaseUtils(getActivity());
+            boolean result;
+            try {
+                Timber.d("checking db integrity.");
 
-                    result = db.checkIntegrity();
+                result = db.checkIntegrity();
 
-                    if (result) {
-                        showToast(R.string.db_check_integrity_success, Toast.LENGTH_SHORT);
-                    } else {
-                        showToast(R.string.db_check_integrity_error, Toast.LENGTH_SHORT);
-                    }
-                } catch (Exception ex) {
-                    Timber.e(ex, "checking integrity");
+                if (result) {
+                    showToast(R.string.db_check_integrity_success, Toast.LENGTH_SHORT);
+                } else {
+                    showToast(R.string.db_check_integrity_error, Toast.LENGTH_SHORT);
                 }
-                return false;
+            } catch (Exception ex) {
+                Timber.e(ex, "checking integrity");
             }
-        };
+            return false;
+        });
+    }
 
-        preference.setOnPreferenceClickListener(clickListener);
+    private void requestBackup() {
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        intent.putExtra(Intent.EXTRA_TITLE, "your_export_db.mmb"); // Set a default file name
+
+        startActivityForResult(intent, RequestCodes.CODE_BACKUP);
+    }
+
+    @Override
+    public void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+
+        if (requestCode == RequestCodes.CODE_BACKUP && resultCode == RESULT_OK) {
+            Uri uri = data.getData();
+            if (uri != null) {
+                // Perform the backup operation using the selected URI
+                backupDatabase(uri);
+            }
+        }
+    }
+
+    private void backupDatabase(Uri destinationUri) {
+        try {
+            DatabaseMetadata db = mDatabases.get().getCurrent();
+            InputStream inputStream = new FileInputStream(db.localPath);
+            OutputStream outputStream = getActivity().getContentResolver().openOutputStream(destinationUri);
+
+            byte[] buffer = new byte[1024];
+            int length;
+            while ((length = inputStream.read(buffer)) > 0) {
+                outputStream.write(buffer, 0, length);
+            }
+
+            inputStream.close();
+            outputStream.close();
+
+            // Show a success message or handle as needed
+            showToast("Backup successful");
+        } catch (IOException e) {
+            e.printStackTrace();
+            // Handle errors appropriately
+            showToast("Backup failed");
+        }
     }
 
     private void initExportDbOption() {
         final Preference pMoveDatabase = findPreference(getString(PreferenceConstants.PREF_DATABASE_BACKUP));
         if (pMoveDatabase != null) {
-            pMoveDatabase.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
-
-                @Override
-                public boolean onPreferenceClick(Preference preference) {
-                    // copy files
-                    Core core = new Core(getActivity().getApplicationContext());
-                    File newDatabases = core.backupDatabase();
-                    if (newDatabases != null) {
-                        Toast.makeText(getActivity(), Html.fromHtml(getString(R.string.database_has_been_moved,
-                                "<b>" + newDatabases.getAbsolutePath() + "</b>")), Toast.LENGTH_LONG).show();
-                        //MainActivity.changeDatabase(newDatabases.getAbsolutePath());
-                        // update the database file
-//                        MoneyManagerApplication.setDatabasePath(getActivity().getApplicationContext(),
-//                                newDatabases.getAbsolutePath());
-                        new AppSettings(getActivity().getApplicationContext()).getDatabaseSettings()
-                                .setDatabasePath(newDatabases.getAbsolutePath());
-                        DonateDialogUtils.resetDonateDialog(getActivity().getApplicationContext());
-                        // set to restart activity
-                        MainActivity.setRestartActivity(true);
-                    } else {
-                        Toast.makeText(getActivity(), R.string.copy_database_on_external_storage_failed, Toast.LENGTH_LONG)
-                                .show();
-                    }
-                    return false;
-                }
+            pMoveDatabase.setOnPreferenceClickListener(preference -> {
+                requestBackup();
+                return false;
             });
-            pMoveDatabase.setEnabled(new DatabaseManager(getActivity().getApplicationContext())
-                    .getDatabasePath().startsWith("/data/"));
         }
     }
 
@@ -289,11 +260,15 @@ public class DatabaseSettingsFragment
         Toast.makeText(getActivity(), resourceId, duration).show();
     }
 
+    private void showToast(String message) {
+        Toast.makeText(getActivity(), message, Toast.LENGTH_SHORT).show();
+    }
+
     private void initFixDuplicates() {
         Preference preference = findPreference(getString(R.string.pref_db_fix_duplicates));
         if (preference == null) return;
 
-        Preference.OnPreferenceClickListener clickListener = new Preference.OnPreferenceClickListener() {
+        preference.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
             @Override
             public boolean onPreferenceClick(Preference preference) {
                 MmxDatabaseUtils utils = new MmxDatabaseUtils(getActivity());
@@ -311,9 +286,7 @@ public class DatabaseSettingsFragment
                 }
                 return false;
             }
-        };
-
-        preference.setOnPreferenceClickListener(clickListener);
+        });
     }
 
     private void showNumberOfRecentFiles() {
